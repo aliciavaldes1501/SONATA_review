@@ -1,0 +1,78 @@
+---
+title: "Anaylises for SONATA review"
+subtitle: "Purpose field"
+author: "Alicia Valdés"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This is a script to perform analyses for the SONATA review paper.
+
+# Load libraries
+
+```{r}
+library(here)
+library(readxl)
+library(tidyverse)
+```
+
+# Read data
+
+```{r}
+sonata_data <-read_excel(here("data", "raw","database_sonata_20250718_AV.xlsx"),
+                         sheet = "SUMA")
+sonata_data
+```
+
+# Plots for Purpose
+
+```{r}
+sonata_data %>%
+  # Keep only cases where FLAG_AV is 0
+  filter(FLAG_AV == 0) %>%
+  # Set Purpose_AV to factor and Year to integer
+  mutate(Year = as.integer(Year), Purpose_AV = as.factor(Purpose_AV)) %>%
+  count(Year, Purpose_AV) %>%
+  ggplot(aes(x = Year, y = n, color = Purpose_AV)) + geom_line(size = 1) +
+  theme_bw()
+```
+
+```{r}
+sonata_data  %>%
+  # Keep only cases where FLAG_AV is 0
+  filter(FLAG_AV == 0) %>%
+  # Set Purpose_AV to factor and Year to integer
+  mutate(Year = as.integer(Year), Purpose_AV = as.factor(Purpose_AV)) %>%
+  group_by(Year, Purpose_AV) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(Year) %>%
+  mutate(total = sum(n), proportion = n / total) %>%
+  ggplot(aes(x = Year, y = proportion, color = Purpose_AV, size = total)) +
+  geom_line(size = 1) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(x = "Year", y = "Proportion of Articles", color = "Purpose") +
+  theme_bw()
+```
+
+```{r}
+sonata_data %>%
+  # Keep only cases where FLAG_AV is 0
+  filter(FLAG_AV == 0) %>%
+  # Set Purpose_AV to factor and Year to integer
+  mutate(Year = as.integer(Year), Purpose_AV = as.factor(Purpose_AV)) %>%
+  group_by(Year, Purpose_AV) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  ggplot(aes(x = Year, y = n, fill = Purpose_AV)) +
+  geom_area(alpha = 0.8, color = "black") +
+  labs(x = "Year", y = "Number of Articles", ill = "Purpose") +
+  theme_bw()
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```
+
