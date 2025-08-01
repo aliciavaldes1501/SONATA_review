@@ -1,0 +1,223 @@
+---
+title: "Anaylises for SONATA review"
+subtitle: "Merge all databases"
+author: "Alicia Valdés"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This is a script to merge all databases for the SONATA review paper.
+
+# Load libraries
+
+```{r}
+library(here)
+library(readxl)
+library(tidyverse)
+library(stringr)
+```
+
+# Read data
+
+## Main DB
+
+```{r}
+sonata_main <- read_excel(
+  here("data", "edited","to_merge", "database_sonata_v2.2_extent_clean.xlsx")) %>%
+  # Keep only fields that have not been cleaned in other DBs
+  select(ID, Reader, Year, Purpose, `keyword 1`, `keyword 2`, `keyword 3`,
+         Extent, # Needs cleaning!
+         Highlight) %>%
+  # Rename keyword fields
+  rename(keyword1 = `keyword 1`, keyword2 = `keyword 2`, keyword3 = `keyword 3`)
+sonata_main
+```
+
+Remove duplicate:
+
+```{r}
+sonata_main %>% count(ID) %>% filter(n > 1)
+```
+
+```{r}
+sonata_main %>% mutate(row_number = row_number()) %>% filter(ID == 2495)
+```
+
+```{r}
+# Remove row number of the wrong entry
+sonata_main <- sonata_main %>% slice(-619)
+```
+
+## Countries DB
+
+```{r}
+sonata_countries <-read_excel(
+  here("data", "edited","to_merge", "sonata_paises_clean_AV.xlsx"))
+sonata_countries
+```
+
+Remove duplicate:
+
+```{r}
+sonata_countries %>% count(ID) %>% filter(n > 1)
+```
+
+```{r}
+sonata_countries %>% mutate(row_number = row_number()) %>% filter(ID == 2495)
+```
+
+```{r}
+# Remove row number of the wrong entry
+sonata_countries <- sonata_countries %>% slice(-619)
+```
+
+## Sensors DB
+
+```{r}
+sonata_sensors <-read_excel(
+  here("data", "edited","to_merge", "sonata_sensor_data_clean.xlsx"),
+  sheet = "sensors_AV")
+sonata_sensors
+```
+
+Remove duplicate rows and combine rows:
+
+```{r}
+sonata_sensors <- sonata_sensors %>% 
+  # Remove duplicate rows
+  distinct() %>%
+  # Unify Santinel-2 and Sentinel 2 to Sentinel-2
+  mutate(Multispectral = if_else(Multispectral == "Santinel 2", "Sentinel-2", 
+                                 Multispectral)) %>%
+  # Combine all columns by ID, replace "" with NA
+  group_by(ID) %>%
+  summarise(across(everything(), ~ {
+    vals <- sort(unique(na.omit(.)))
+    if (length(vals) == 0) NA_character_ else paste(vals, collapse = "; ")
+    }), .groups = "drop")
+```
+
+## Algorithms DB
+
+```{r}
+sonata_algorithms <-read_excel(
+  here("data", "edited","to_merge", "algoritmos_inicial_corregido_OK_FINAL_JUNTO_AV.xlsx"))
+sonata_algorithms
+```
+
+Remove duplicate:
+
+```{r}
+sonata_algorithms %>% count(ID) %>% filter(n > 1)
+```
+
+## Environmental data DB
+
+```{r}
+sonata_env <-read_csv(
+  here("data", "edited","to_merge", "sonata_env_data_clean.csv"))
+sonata_env
+```
+
+Modify to have the same format as other DBs. Columns Climate, Soil, Topography, Biotic. Each of them will (except Biotic) have the "main" variables separated by ;, variables that are not the main variables will be "Others", when variables were unspecified (i.e. people put 0 or 1), it will be "Unspecified". Biotic will have 0/1.
+
+```{r}
+sonata_env <- sonata_env %>%
+  rowwise() %>%
+  mutate(Clim_temp = if_else(Clim_temp == 1, "Temperature", NA),
+         Clim_precip = if_else(Clim_precip  == 1, "Precipitation", NA),
+         Clim_rad = if_else(Clim_rad == 1, "Radiation", NA),
+         Clim_humid = if_else(Clim_humid == 1, "Humidiy", NA),
+         Clim_wind = if_else(Clim_wind == 1, "Wind", NA),
+         Clim_evap = if_else(Clim_evap == 1, "Evapotranspiration", NA),
+         Clim_other = if_else(Clim_other == 1, "Other", NA),
+         Clim_unspecif = if_else(Clim_unspecif == 1, "Unspecified", NA),
+         Soil_type = if_else(Soil_type == 1, "Type", NA),
+         Soil_text = if_else(Soil_text == 1, "Texture", NA),
+         Soil_moist = if_else(Soil_moist == 1, "Moisture", NA),
+         Soil_depth = if_else(Soil_depth == 1, "Depth", NA),
+         Soil_ph = if_else(Soil_ph == 1, "pH", NA),
+         Soil_carbon = if_else(Soil_carbon == 1, "Carbon", NA), 
+         Soil_rough = if_else(Soil_rough == 1, "Roughness", NA),
+         Soil_ferti = if_else(Soil_ferti == 1, "Fertility", NA),
+         Soil_nitro = if_else(Soil_nitro == 1, "Nitrogen", NA),
+         Soil_bulk = if_else(Soil_bulk == 1, "Bulk density", NA),
+         Soil_other = if_else(Soil_other == 1, "Other", NA),
+         Soil_unspecif = if_else(Soil_unspecif == 1, "Unspecified", NA),
+         Topo_aspect =  if_else(Topo_aspect == 1, "Aspect", NA),
+         Topo_slope = if_else(Topo_slope == 1, "Slope", NA),
+         Topo_elev = if_else(Topo_elev == 1, "Elevation", NA),
+         Topo_twi = if_else(Topo_twi == 1, "TWI", NA),
+         Topo_curv = if_else(Topo_curv == 1, "Curvature", NA),
+         Topo_other = if_else(Topo_other == 1, "Other", NA),
+         Topo_unspecif = if_else(Topo_unspecif == 1, "Unspecified", NA)
+         ) %>%
+  ungroup() %>%
+  unite("Climate", Clim_temp:Clim_unspecif, sep = "; ", na.rm = TRUE,
+        remove = TRUE) %>%
+  mutate(Climate = na_if(Climate, "")) %>%
+  unite("Soil", Soil_type:Soil_unspecif, sep = "; ", na.rm = TRUE,
+        remove = TRUE) %>%
+  mutate(Soil = na_if(Soil, "")) %>%
+  unite("Topography", Topo_aspect:Topo_unspecif, sep = "; ", na.rm = TRUE,
+        remove = TRUE) %>%
+  mutate(Topography = na_if(Topography, "")) %>%
+  mutate(Biotic = Biotic_bin) %>%
+  select(ID, Climate, Soil, Topography, Biotic)
+```
+
+# Merge
+
+```{r}
+sonata_db <- full_join(sonata_main, sonata_countries) %>%
+  full_join(sonata_sensors) %>%
+  full_join(sonata_algorithms) %>%
+  full_join(sonata_env)
+```
+
+# Remove ID where I found errors
+
+I found errors in these IDs when looking at the Excel files (e.g. the ID did not correspond to the reader and the info did not match that ID).
+
+```{r}
+sonata_db <- sonata_db %>% filter(ID != 66)
+```
+
+# Change errors in sensor
+
+```{r}
+sonata_db <- sonata_db %>%
+  mutate(
+    Multispectral = case_when(
+      str_detect(Hyperspectral, "Landsat") & is.na(Multispectral) ~ "Landsat",
+      str_detect(Hyperspectral, "Landsat") & !is.na(Multispectral) ~ 
+        paste0(Multispectral, "; Landsat"),
+      TRUE ~ Multispectral)
+    ) %>%
+  mutate(Hyperspectral = if_else(str_detect(Hyperspectral, "Landsat"),
+                                 NA_character_, Hyperspectral))
+```
+
+# Order columns
+
+```{r}
+sonata_db <- sonata_db %>%
+  select(ID, Reader, Year, Purpose, keyword1, keyword2, keyword3, `Study area`,
+         Country_list, Extent, RGB, Multispectral, Hyperspectral, LiDAR, RaDAR,
+         Thermal, Climate, Soil, Topography, Biotic, Visual, IndexClass, OBIA, 
+         Regression, `Time series analysis`, ML, AI, Highlight)
+```
+
+# Save as csv
+
+```{r}
+write_csv(sonata_db, "data/clean/sonata_db_20250731.csv")
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```

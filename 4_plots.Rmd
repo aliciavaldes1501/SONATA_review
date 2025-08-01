@@ -1,0 +1,1072 @@
+---
+title: "Anaylises for SONATA review"
+subtitle: "Plots"
+author: "Alicia Valdés"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This is a script to merge all databases for the SONATA review paper.
+
+# Load libraries
+
+```{r}
+library(here)
+library(readxl)
+library(tidyverse)
+library(cowplot)
+library(ggridges)
+library(patchwork)
+library(writexl)
+```
+
+# Read data
+
+```{r}
+sonata_db <- read_csv(
+  here("data", "clean","sonata_db_20250731.csv")) 
+sonata_db
+```
+
+# Create sensor and algorithm columns
+
+```{r}
+sonata_db <- sonata_db %>%
+  rowwise() %>%
+  mutate(Sensor = case_when(
+    rowSums(!is.na(across(c(RGB, Multispectral, Hyperspectral, LiDAR, RaDAR, 
+                            Thermal)))) == 0 ~ NA_character_,
+    TRUE ~ paste(
+      c(
+        if (!is.na(RGB)) "RGB" else NULL,
+        if (!is.na(Multispectral)) "Multispectral" else NULL,
+        if (!is.na(Hyperspectral)) "Hyperspectral" else NULL,
+        if (!is.na(LiDAR)) "LiDAR" else NULL,
+        if (!is.na(RaDAR)) "Radar" else NULL,
+        if (!is.na(Thermal)) "Thermal" else NULL
+      ),
+      collapse = "; "
+    )
+  )) %>%
+  mutate(Algorithm = case_when(
+    rowSums(!is.na(across(c(Visual, IndexClass, OBIA, Regression,
+                            `Time series analysis`, ML, AI)))) == 0 ~
+      NA_character_,
+    TRUE ~ paste(
+      c(
+        if (!is.na(Visual)) "Visual" else NULL,
+        if (!is.na(IndexClass)) "IndexClass" else NULL,
+        if (!is.na(OBIA)) "OBIA" else NULL,
+        if (!is.na(Regression)) "Regression" else NULL,
+        if (!is.na(`Time series analysis`)) "Time series analysis" else NULL,
+        if (!is.na(ML)) "ML" else NULL,
+        if (!is.na(AI)) "AI" else NULL
+      ),
+      collapse = "; "
+    )
+  ))
+```
+
+# General
+
+```{r}
+sonata_db %>%
+  mutate(Year_bin = paste0(
+    1986 + 5 * ((Year - 1986) %/% 5),
+    "–",
+    1986 + 5 * ((Year - 1986) %/% 5) + 4
+  )) %>%
+  count(Year_bin) %>%
+  mutate(
+    Year_bin = factor(Year_bin, 
+                      levels = unique(Year_bin[order(
+                        as.numeric(sub("–.*", "", Year_bin)))])),
+    n = as.numeric(n)
+    ) %>%
+  ggplot(aes(x = Year_bin, y = n, group = 1)) +
+  geom_point(color = "azure4", size = 4) +
+  geom_line(color = "azure4", size = 1) +
+  theme_bw() +
+  labs(x = "5-year interval", y = "Number of studies")
+```
+# Purpose per year
+
+```{r}
+sonata_db %>%
+  count(Year, Purpose) %>%
+  group_by(Year) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year, y = n, fill = Purpose)) + 
+  geom_area(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() + ylab("Number of studies") +
+  ggtitle("Purpose: area plot with n studies per year")
+```
+
+```{r}
+sonata_db %>%
+  ggplot(aes(x = Year, fill = Purpose)) +
+  geom_density(alpha = 0.8, position = "stack", bw = 0.5) +
+  labs(x = "Year", y = "Density", fill = "Purpose") +
+  theme_bw() +
+  ggtitle("Purpose: density plot per year")
+```
+
+```{r}
+sonata_db %>%
+  mutate(Year_bin = paste0(
+    1986 + 5 * ((Year - 1986) %/% 5),
+    "–",
+    1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+  count(Year_bin, Purpose) %>%
+  group_by(Year_bin) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin, y = n, fill = Purpose)) + 
+  geom_col(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() + ylab("Number of studies") + xlab("5-year interval") +
+  ggtitle("Purpose: bar plot with n studies per 5-year interval")
+```
+
+```{r}
+sonata_db %>%
+  mutate(Year_bin = paste0(
+    1986 + 5 * ((Year - 1986) %/% 5),
+    "–",
+    1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+  count(Year_bin, Purpose) %>%
+  group_by(Year_bin) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin, y = percentage, fill = Purpose)) + 
+  geom_col(position = "stack", color = "black", alpha = 0.8) +
+  geom_text(aes(label = paste0(round(percentage), "%")),
+            position = position_stack(vjust = 0.5), size = 3, color = "black") +
+  theme_bw() + ylab("% of studies") + xlab("5-year interval") +
+  ggtitle("Purpose: bar plot with % studies per 5-year interval")
+```
+
+```{r}
+sonata_db %>%
+  mutate(
+    Year_bin_start = 1986 + 5 * ((Year - 1986) %/% 5),
+    Year_bin_mid = Year_bin_start + 2  # midpoint of 5-year interval
+  ) %>%
+  count(Year_bin_mid, Purpose) %>%
+  group_by(Year_bin_mid) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin_mid, y = n, fill = Purpose)) + 
+  geom_area(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() +
+  ylab("Number of studies") +
+  xlab("Year (midpoint of 5-year intervals)") +
+  ggtitle("Purpose: area plot with n studies per 5-year interval")
+```
+
+# Sensor per year
+
+```{r}
+sonata_db %>%
+  mutate(RGB_bin = if_else(is.na(RGB), 0, 1),
+         Multispectral_bin = if_else(is.na(Multispectral), 0, 1),
+         Hyperspectral_bin = if_else(is.na(Hyperspectral), 0, 1),
+         LiDAR_bin = if_else(is.na(LiDAR), 0, 1),
+         RaDAR_bin = if_else(is.na(RaDAR), 0, 1),
+         Thermal_bin = if_else(is.na(Thermal), 0, 1),
+         ) %>%
+  select(ID, Year, RGB_bin, Multispectral_bin, Hyperspectral_bin, LiDAR_bin,
+         RaDAR_bin, Thermal_bin) %>%
+  pivot_longer(cols = RGB_bin:Thermal_bin, names_to = "Sensor", values_to = "Used") %>%
+  filter(Used == 1) %>%
+  count(Year, Sensor) %>%
+  mutate(Sensor = str_remove(Sensor, "_bin")) %>%
+  ggplot( aes(x = Year, y = n, fill = Sensor)) +
+  geom_area(alpha = 0.8, color = "black") +
+  ylab("Number of studies") +  
+  ggtitle("Sensor: area plot with n studies per year") +
+  theme_minimal()
+```
+
+```{r}
+sonata_db %>%
+  separate_rows(Sensor, sep = ";\\s*") %>%
+  mutate(Year_bin = paste0(
+    1986 + 5 * ((Year - 1986) %/% 5),
+    "–",
+    1986 + 5 * ((Year - 1986) %/% 5) + 4
+  )) %>%
+  count(Year_bin, Sensor) %>%
+  group_by(Year_bin) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin, y = n, fill = Sensor)) + 
+  geom_col(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() + ylab("Number of studies") + xlab("5-year interval") +
+  ggtitle("Sensor: bar plot with n studies per 5-year interval")
+```
+
+```{r}
+sonata_db %>%
+  separate_rows(Sensor, sep = ";\\s*") %>%
+  mutate(Year_bin = paste0(
+    1986 + 5 * ((Year - 1986) %/% 5),
+    "–",
+    1986 + 5 * ((Year - 1986) %/% 5) + 4
+  )) %>%
+  count(Year_bin, Sensor) %>%
+  group_by(Year_bin) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin, y = percentage, fill = Sensor)) + 
+  geom_col(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() + ylab("% of studies") + xlab("5-year interval") +
+  ggtitle("Sensor: bar plot with % studies per 5-year interval")
+```
+
+```{r}
+sonata_db %>%
+  separate_rows(Sensor, sep = ";\\s*") %>%
+  mutate(
+    Year_bin_start = 1986 + 5 * ((Year - 1986) %/% 5),
+    Year_bin_mid = Year_bin_start + 2  # midpoint of 5-year interval
+  ) %>%
+  count(Year_bin_mid, Sensor) %>%
+  group_by(Year_bin_mid) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin_mid, y = n, fill = Sensor)) + 
+  geom_area(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() +
+  ylab("Number of studies") +
+  xlab("Year (midpoint of 5-year intervals)") +
+  ggtitle("Sensor: area plot with n studies per 5-year interval")
+```
+
+# Algorithm per year
+
+```{r}
+sonata_db %>%
+  separate_rows(Algorithm, sep = ";\\s*") %>%
+  mutate(Year_bin = paste0(
+    1986 + 5 * ((Year - 1986) %/% 5),
+    "–",
+    1986 + 5 * ((Year - 1986) %/% 5) + 4
+  )) %>%
+  count(Year_bin, Algorithm) %>%
+  group_by(Year_bin) %>%
+  mutate(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(percentage = (n / total) * 100) %>%
+  ggplot(aes(x = Year_bin, y = percentage, fill = Algorithm)) + 
+  geom_col(position = "stack", color = "black", alpha = 0.8) +
+  theme_bw() + ylab("% of studies") + xlab("5-year interval") +
+  ggtitle("Algorithm: bar plot with % studies per 5-year interval")
+```
+
+# Combined plots
+
+## Bars
+
+### Vertical
+
+```{r}
+combined_bars_vertical <- plot_grid(
+  # N studies
+  sonata_db %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin) %>%
+    mutate(
+      Year_bin = factor(Year_bin, 
+                        levels = unique(Year_bin[order(
+                          as.numeric(sub("–.*", "", Year_bin)))])),
+      n = as.numeric(n)
+    ) %>%
+    ggplot(aes(x = Year_bin, y = n, group = 1)) +
+    geom_point(color = "azure4", size = 2) +
+    geom_line(color = "azure4") +
+    theme_bw() +
+    labs(x = NULL, y = "Number of studies") +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.x = element_blank()),
+  # Purpose
+  sonata_db %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Purpose) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100,
+           label = ifelse(percentage >= 5,
+                          paste0(round(percentage), "%"), NA)) %>%
+    ggplot(aes(x = Year_bin, y = percentage, fill = Purpose)) + 
+    geom_col(position = "stack", color = "black", alpha = 0.8) +
+    geom_text(aes(label = label),
+              position = position_stack(vjust = 0.5), size = 3, color = "black") +
+    theme_bw() + ylab("% of studies") + xlab(NULL) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.x = element_blank()),
+  # Sensor
+  sonata_db %>%
+    # Keep only those that have sensor data
+    filter(!is.na(Sensor))  %>%
+    separate_rows(Sensor, sep = ";\\s*") %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Sensor) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100,
+           label = ifelse(percentage >= 5,
+                          paste0(round(percentage), "%"), NA)) %>%
+    ggplot(aes(x = Year_bin, y = percentage, fill = Sensor)) + 
+    geom_col(position = "stack", color = "black", alpha = 0.8) +
+    geom_text(aes(label = label),
+              position = position_stack(vjust = 0.5), size = 3, color = "black") +
+    theme_bw() + ylab("% of studies") + xlab(NULL) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.x = element_blank()),
+  # Algorithm
+  sonata_db %>%
+    # Keep only those that have Algorithm data
+    filter(!is.na(Algorithm))  %>%
+    separate_rows(Algorithm, sep = ";\\s*") %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Algorithm) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100,
+           label = ifelse(percentage >= 5,
+                          paste0(round(percentage), "%"), NA)) %>%
+    ggplot(aes(x = Year_bin, y = percentage, fill = Algorithm)) + 
+    geom_col(position = "stack", color = "black", alpha = 0.8) +
+    geom_text(aes(label = label),
+              position = position_stack(vjust = 0.5), size = 3, color = "black") +
+    theme_bw() + ylab("% of studies") + xlab("5-year interval"),
+  ncol = 1, align = "v", rel_heights = c(3, 7, 7, 8)
+  )
+```
+
+```{r}
+combined_bars_vertical
+```
+
+```{r}
+ggsave(here("output", "figures", "combined_bars_vertical.tiff"), 
+       plot = combined_bars_vertical, width = 20, height = 27, units = "cm", 
+       dpi = 300)
+ggsave(here("output", "figures", "combined_bars_vertical_200dpi.tiff"), 
+       plot = combined_bars_vertical, width = 20, height = 27, units = "cm", 
+       dpi = 200)
+```
+
+### Horizontal
+
+```{r}
+combined_bars_horizontal <- plot_grid(
+  # N studies
+  sonata_db %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin) %>%
+    mutate(
+      Year_bin = factor(Year_bin, 
+                        levels = unique(Year_bin[order(
+                          as.numeric(sub("–.*", "", Year_bin)), decrease = T)])),
+      n = as.numeric(n)
+    ) %>%
+    ggplot(aes(x = n, y = Year_bin, group = 1)) +
+    geom_point(color = "azure4", size = 3) +
+    geom_line(color = "azure4", size = 1) +
+    theme_bw() + 
+    labs(x = "Number of studies", y = "5-year interval"),
+  # Purpose
+  sonata_db %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Purpose) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100) %>%
+    ggplot(aes(x = percentage, y = Year_bin, fill = Purpose)) + 
+    geom_col(position = "stack", color = "black", alpha = 0.8) +
+    geom_text(aes(label = paste0(round(percentage), "%")),
+              position = position_stack(vjust = 0.5), size = 3, color = "black") +
+    theme_bw() + ylab(NULL) + xlab("% of studies") +
+    theme(legend.position = "top") +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), 
+          axis.title.y = element_blank()),
+  # Sensor
+  sonata_db %>%
+    separate_rows(Sensor, sep = ";\\s*") %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Sensor) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100) %>%
+    ggplot(aes(x = percentage, y = Year_bin, fill = Sensor)) + 
+    geom_col(position = "stack", color = "black", alpha = 0.8) +
+    geom_text(aes(label = paste0(round(percentage), "%")),
+              position = position_stack(vjust = 0.5), size = 3, color = "black") +
+    theme_bw() + ylab(NULL) + xlab("% of studies") +
+    theme(legend.position = "top") +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), 
+          axis.title.y = element_blank()),
+  # Algorithm
+  sonata_db %>%
+    separate_rows(Algorithm, sep = ";\\s*") %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Algorithm) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100) %>%
+    ggplot(aes(x = percentage, y = Year_bin, fill = Algorithm)) + 
+    geom_col(position = "stack", color = "black", alpha = 0.8) +
+    geom_text(aes(label = paste0(round(percentage), "%")),
+              position = position_stack(vjust = 0.5), size = 3, color = "black") +
+    theme_bw() + ylab(NULL) + xlab("% of studies") +
+    theme(legend.position = "top") +
+    theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), 
+          axis.title.y = element_blank()),
+  nrow = 1, align = "h", rel_widths = c(3, 7, 7, 7)
+)
+```
+
+```{r}
+combined_bars_horizontal
+```
+
+## Lines
+
+```{r}
+combined_lines <- plot_grid(
+  # N studies
+  sonata_db %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin) %>%
+    mutate(
+      Year_bin = factor(Year_bin, 
+                        levels = unique(Year_bin[order(
+                          as.numeric(sub("–.*", "", Year_bin)))])),
+      n = as.numeric(n)
+    ) %>%
+    ggplot(aes(x = Year_bin, y = n, group = 1)) +
+    geom_point(color = "azure4", size = 2) +
+    geom_line(color = "azure4") +
+    theme_bw() +
+    labs(x = NULL, y = "Number of studies") +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.x = element_blank()),
+  # Purpose
+  sonata_db %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Purpose) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100,
+           label = ifelse(percentage >= 5,
+                          paste0(round(percentage), "%"), NA)) %>%
+    ggplot(aes(x = Year_bin, y = percentage, color = Purpose)) + 
+    geom_line(aes(group = Purpose)) +
+    geom_point(size = 2) +
+    theme_bw() + ylab("% of studies") + xlab(NULL) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.x = element_blank()),
+  # Sensor
+  sonata_db %>%
+    # Keep only those that have sensor data
+    filter(!is.na(Sensor))  %>%
+    separate_rows(Sensor, sep = ";\\s*") %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Sensor) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100,
+           label = ifelse(percentage >= 5,
+                          paste0(round(percentage), "%"), NA)) %>%
+    ggplot(aes(x = Year_bin, y = percentage, color = Sensor)) + 
+    geom_line(aes(group = Sensor)) +
+    geom_point(size = 2) +
+    theme_bw() + ylab("% of studies") + xlab(NULL) +
+    theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), 
+          axis.title.x = element_blank()),
+  # Algorithm
+  sonata_db %>%
+    # Keep only those that have Algorithm data
+    filter(!is.na(Algorithm))  %>%
+    separate_rows(Algorithm, sep = ";\\s*") %>%
+    mutate(Year_bin = paste0(
+      1986 + 5 * ((Year - 1986) %/% 5),
+      "–",
+      1986 + 5 * ((Year - 1986) %/% 5) + 4
+    )) %>%
+    count(Year_bin, Algorithm) %>%
+    group_by(Year_bin) %>%
+    mutate(total = sum(n)) %>%
+    ungroup() %>%
+    mutate(percentage = (n / total) * 100,
+           label = ifelse(percentage >= 5,
+                          paste0(round(percentage), "%"), NA)) %>%
+    ggplot(aes(x = Year_bin, y = percentage, color = Algorithm)) + 
+    geom_line(aes(group = Algorithm)) +
+    geom_point(size = 2) +
+    theme_bw() + ylab("% of studies") + xlab("5-year interval"),
+  ncol = 1, align = "v", rel_heights = c(3, 7, 7, 8)
+)
+```
+
+```{r}
+combined_lines
+```
+
+
+```{r}
+ggsave(here("output", "figures", "combined_lines.tiff"), 
+       plot = combined_lines, width = 20, height = 27, units = "cm", 
+       dpi = 300)
+ggsave(here("output", "figures", "combined_lines_200dpi.tiff"), 
+       plot = combined_lines, width = 20, height = 27, units = "cm", 
+       dpi = 200)
+```
+
+# Sensor detailed
+
+Recode some less abundant sensor subtypes to "Others".
+
+```{r}
+sonata_db_sensor_recoded <- sonata_db %>%
+  mutate(RGB = str_replace_all(
+    RGB,
+    regex("Google Earth|Landsat TM|PhenoCam|QuickBird|Sentinel-2",
+          ignore_case = TRUE), "Others"),
+    Hyperspectral = str_replace_all(
+      Hyperspectral,
+      regex("AMSR-E|ASD Field Spectrometer|CASI|CHRIS-Proba|DESIS|EnMAP|GaoFen-5B (AHSI)|Kosmos-1939/MSU-E|MODIS|NEON AOP|PRISMA|SMOS|WindSat",
+      ignore_case = TRUE), "Others"),
+      LiDAR = str_replace_all(
+        LiDAR,
+        regex("Cloud|LVIS", ignore_case = TRUE), "Others"),
+      RaDAR = str_replace_all(
+        RaDAR,
+        regex("Envisat ASAR|JERS-1 SAR|RADARSAT-2|TerraSAR-X",
+              ignore_case = TRUE), "Others"),
+      Thermal = str_replace_all(
+        Thermal,
+        regex("ASCAT|ASTER|CYGNSS|DMSP-OLS|LST|NPP-VIIRS|PAR sensor|Passive microwave|TRMM 3B42|UAV",
+              ignore_case = TRUE),"Others")) %>%
+  # Replace Landsat whatever by Landsat
+  mutate(RGB = str_replace_all(
+    RGB, 
+    regex("Landsat TM|Landsat-4|Landsat-5|Landsat-7|Landsat-8|Landsat-9",
+          ignore_case = TRUE), "Landsat"),
+    Multispectral = str_replace_all(
+      Multispectral, 
+      regex("Landsat TM|Landsat-4|Landsat-5|Landsat-7|Landsat-8|Landsat-9", 
+            ignore_case = TRUE), "Landsat"),
+    Hyperspectral = str_replace_all(
+      Hyperspectral, 
+      regex("Landsat TM|Landsat-4|Landsat-5|Landsat-7|Landsat-8|Landsat-9",
+            ignore_case = TRUE), "Landsat"),
+    LiDAR = str_replace_all(
+      LiDAR,
+      regex("Landsat TM|Landsat-4|Landsat-5|Landsat-7|Landsat-8|Landsat-9",
+            ignore_case = TRUE), "Landsat"),
+    RaDAR = str_replace_all(
+      RaDAR, regex("Landsat[^;]", ignore_case = TRUE), "Landsat"),
+    Thermal = str_replace_all(
+      Thermal, 
+      regex("Landsat TM|Landsat-4|Landsat-5|Landsat-7|Landsat-8|Landsat-9",
+            ignore_case = TRUE),"Landsat")) %>%
+  # Correct "Others; Others"
+  mutate(
+    RGB = if_else(RGB == "Others; Others", "Others", RGB),
+    Hyperspectral = if_else(Hyperspectral == "Others; Others", "Others",
+                            Hyperspectral),
+    LiDAR = if_else(LiDAR == "Others; Others", "Others", LiDAR),
+    RaDAR = if_else(RaDAR == "Others; Others", "Others", RaDAR),
+    Thermal = if_else(Thermal == "Others; Others", "Others", Thermal)
+    ) %>%
+  # Replace hyperspectral subtype that did not work before
+  mutate(Hyperspectral = if_else(Hyperspectral == "GaoFen-5B (AHSI); Others",
+                                 "Others", Hyperspectral))
+```
+
+## Per year
+
+Info about sensor subtypes. Percentages calculated from IDs with info on sensor subtype.
+
+```{r}
+# Pivot longer to get all sensor categories in one column
+sensor_long <- sonata_db_sensor_recoded %>%
+  pivot_longer(cols = c(RGB, Multispectral, Hyperspectral, LiDAR, RaDAR, Thermal),
+               names_to = "Sensor_type", values_to = "Sensor_subtype") %>%
+  # Remove those without info on sensor subtype
+  filter(!is.na(Sensor_subtype)) %>%
+  separate_rows(Sensor_subtype, sep = ";\\s*") %>%
+  group_by(Year, Sensor_type, Sensor_subtype) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Year, Sensor_type) %>%
+  mutate(percentage = (Count / sum(Count)) * 100) %>%
+  ungroup() %>%
+  mutate(Sensor_type = factor(Sensor_type,
+                              levels = c("RGB", "Multispectral",
+                                         "Hyperspectral", "LiDAR", "RaDAR",
+                                         "Thermal")))
+```
+
+```{r}
+sensor_long %>%
+  group_by(Sensor_type, Sensor_subtype) %>%
+  summarise(total_counts = sum(Count)) %>%
+  ungroup() %>%
+  print(n = 100)
+```
+
+```{r}
+# Dividir por tipo de sensor
+sensor_groups <- sensor_long %>%
+  group_split(Sensor_type)
+```
+
+### Bars
+
+```{r}
+sensor_bars <- map2(sensor_groups, seq_along(sensor_groups), ~ {
+  p <- ggplot(.x, aes(x = Year, y = percentage, fill = Sensor_subtype)) +
+    geom_col() +
+    theme_bw() +
+    labs(title = unique(.x$Sensor_type), y = "% of studies", x = if (.y == length(sensor_groups)) "Year" else NULL) +
+    theme(
+      legend.position = "right",
+      legend.title = element_blank(),
+      # Solo mostrar etiquetas del eje x en el último gráfico
+      axis.title.x = if (.y != length(sensor_groups)) element_blank() else element_text(),
+      axis.text.x = if (.y != length(sensor_groups)) element_blank() else element_text(),
+      axis.ticks.x = if (.y != length(sensor_groups)) element_blank() else element_line()
+    ) +
+    guides(fill = guide_legend(ncol = 1))  # vertical legend
+  
+  return(p)
+})
+
+# Combine wtih patchwork
+sensor_detail_bars <- wrap_plots(sensor_bars, ncol = 1)
+sensor_detail_bars
+```
+
+### Lines
+
+```{r}
+sensor_lines <- map2(sensor_groups, seq_along(sensor_groups), ~ {
+  p <- ggplot(.x, aes(x = Year, y = percentage, color = Sensor_subtype)) +
+    geom_point() +
+    geom_line() +
+    theme_bw() +
+    labs(title = unique(.x$Sensor_type), y = "% of studies") +
+    theme(legend.position = "right", legend.title = element_blank()) +
+    guides(color = guide_legend(ncol = 1))
+  
+  # Solo mostrar etiquetas del eje x en el último gráfico
+  if (.y != length(sensor_groups)) {
+    p <- p + theme(axis.title.x = element_blank(),
+                   axis.text.x = element_blank(),
+                   axis.ticks.x = element_blank())
+  } else {
+    p <- p + labs(x = "Year")
+  }
+  
+  return(p)
+})
+
+# Combine with patchwork
+sensor_detail_lines <- wrap_plots(sensor_lines, ncol = 1, guides = "collect", 
+                            axis_titles = "collect")
+sensor_detail_lines
+```
+
+```{r}
+ggsave(here("output", "figures", "sensor_detail_lines.tiff"), 
+       plot = sensor_detail_lines, width = 20, height = 27, units = "cm")
+```
+
+## 5-year bins
+
+Info about sensor subtypes. Percentages calculated from IDs with info on sensor subtype.
+
+```{r}
+# Pivot longer to get all sensor categories in one column
+sensor_long_5bins <- sonata_db_sensor_recoded %>%
+  pivot_longer(cols = c(RGB, Multispectral, Hyperspectral, LiDAR, RaDAR, Thermal),
+               names_to = "Sensor_type", values_to = "Sensor_subtype") %>%
+  # Remove those without info on sensor subtype
+  filter(!is.na(Sensor_subtype)) %>%
+  separate_rows(Sensor_subtype, sep = ";\\s*") %>%
+  mutate(Year_bin = paste0(1986 + 5 * ((Year - 1986) %/% 5), "–",
+                           1986 + 5 * ((Year - 1986) %/% 5) + 4)) %>%
+  group_by(Year_bin, Sensor_type, Sensor_subtype) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Year_bin, Sensor_type) %>%
+  mutate(percentage = (Count / sum(Count)) * 100,
+         label = ifelse(percentage >= 10,
+                          paste0(round(percentage), "%"), NA)) %>%
+  ungroup() %>%
+  mutate(Sensor_type = factor(Sensor_type,
+                              levels = c("RGB", "Multispectral",
+                                         "Hyperspectral", "LiDAR", "RaDAR",
+                                         "Thermal")))
+```
+
+```{r}
+sensor_long_5bins %>%
+  group_by(Sensor_type, Sensor_subtype) %>%
+  summarise(total_counts = sum(Count)) %>%
+  ungroup() %>%
+  print(n = 100)
+```
+
+```{r}
+# Dividir por tipo de sensor
+sensor_groups_5bins <- sensor_long_5bins %>%
+  group_split(Sensor_type)
+```
+
+### Bars
+
+```{r}
+sensor_bars_5bins <- map2(sensor_groups_5bins, seq_along(sensor_groups_5bins), 
+                          ~ {
+  p <- ggplot(.x, aes(x = Year_bin, y = percentage, fill = Sensor_subtype)) +
+    geom_col(color = "black") +
+    geom_text(aes(label = label),
+              position = position_stack(vjust = 0.5),
+              size = 3, color = "black") +
+    theme_bw() +
+    # Common x-axis
+    scale_x_discrete(limits = 
+                       sort(unique(unlist(lapply(sensor_groups_5bins, 
+                                                 function(df) df$Year_bin))))) +
+    labs(title = unique(.x$Sensor_type), y = "% of studies", x = if (.y == length(sensor_groups_5bins)) "Year" else NULL) +
+    theme(
+      legend.position = "right",
+      legend.title = element_blank(),
+      # Only show x-axis labels in the last graph
+      axis.title.x = if (.y != length(sensor_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.text.x = if (.y != length(sensor_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.ticks.x = if (.y != length(sensor_groups_5bins)) 
+        element_blank() else element_line()
+    ) +
+    guides(fill = guide_legend(ncol = 1))  # vertical legend
+  
+  return(p)
+})
+
+
+# Combine wtih patchwork
+sensor_detail_bars_5bins <- wrap_plots(sensor_bars_5bins, ncol = 1)
+sensor_detail_bars_5bins
+```
+
+```{r}
+ggsave(here("output", "figures", "sensor_detail_bars.tiff"), 
+       plot = sensor_detail_bars_5bins, width = 20, height = 27, units = "cm",
+       dpi = 300)
+ggsave(here("output", "figures", "sensor_detail_bars_200dpi.tiff"), 
+       plot = sensor_detail_bars_5bins, width = 20, height = 27, units = "cm",
+       dpi = 200)
+```
+
+### Lines
+
+```{r}
+sensor_lines_5bins <- map2(sensor_groups_5bins, seq_along(sensor_groups_5bins), 
+                           ~ {
+  p <- ggplot(.x, aes(x = Year_bin, y = percentage, color = Sensor_subtype)) +
+    geom_line(aes(group = Sensor_subtype)) +
+    geom_point() +
+    theme_bw() +
+    # Common x-axis
+    scale_x_discrete(limits = 
+                       sort(unique(unlist(lapply(sensor_groups_5bins, 
+                                                 function(df) df$Year_bin))))) +
+    labs(title = unique(.x$Sensor_type), y = "% of studies", x = if (.y == length(sensor_groups_5bins)) "Year" else NULL) +
+    theme(
+      legend.position = "right",
+      legend.title = element_blank(),
+      # Only show x-axis labels in the last graph
+      axis.title.x = if (.y != length(sensor_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.text.x = if (.y != length(sensor_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.ticks.x = if (.y != length(sensor_groups_5bins)) 
+        element_blank() else element_line()
+    ) +
+    guides(fill = guide_legend(ncol = 1))  # vertical legend
+  
+  return(p)
+})
+
+
+# Combine wtih patchwork
+sensor_detail_lines_5bins <- wrap_plots(sensor_lines_5bins, ncol = 1)
+sensor_detail_lines_5bins
+```
+
+```{r}
+ggsave(here("output", "figures", "sensor_detail_lines.tiff"), 
+       plot = sensor_detail_lines_5bins, width = 20, height = 27, units = "cm",
+       dpi = 300)
+ggsave(here("output", "figures", "sensor_detail_lines_200dpi.tiff"), 
+       plot = sensor_detail_lines_5bins, width = 20, height = 27, units = "cm",
+       dpi = 200)
+```
+
+# Algorithm detailed
+
+Info about algorithm subtypes.
+
+```{r}
+# Pivot longer to get all sensor categories in one column
+algorithm_types_subtypes <- sonata_db %>%
+  pivot_longer(cols = c(Visual, IndexClass, OBIA, Regression, 
+                        `Time series analysis`, ML, AI),
+               names_to = "Algorithm_type", values_to = "Algorithm_subtype") %>%
+  # Do not remove those without info on algorithm subtype
+  separate_rows(Algorithm_subtype, sep = ";\\s*") %>%
+  group_by(Algorithm_type, Algorithm_subtype) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Algorithm_type) %>%
+  mutate(percentage = (Count / sum(Count)) * 100) %>%
+  ungroup()
+```
+
+```{r}
+write_xlsx(algorithm_types_subtypes, "data/edited/algorithm_types_subtypes.xlsx")
+```
+
+Recode some less abundant algorithm subtypes to "Others".
+
+```{r}
+sonata_db_algorithm_recoded <- sonata_db %>%
+  # Only considering algorithm subtypes within AI IndexClass and ML
+  mutate(AI = str_replace_all(
+    AI,
+    regex("Autoencoder|RNN-type network",
+          ignore_case = TRUE), "Others"),
+    IndexClass = str_replace_all(
+      IndexClass,
+      regex("SAR|Structural index",
+      ignore_case = TRUE), "Others"),
+    ML = str_replace_all(
+        ML,
+        regex("Feature selection|MaxEnt|PCA|Supervised classifier|Unsupervised classification|Unsupervised clustering", ignore_case = TRUE), "Others")) %>%
+  # Correct "Others; Others"
+  mutate(
+    AI = if_else(AI == "Others; Others", "Others", AI),
+    ML = if_else(ML == "Others; Others", "Others",
+                            ML),
+    IndexClass = if_else(IndexClass == "Others; Others", "Others", IndexClass)
+    )
+```
+
+## 5-year bins
+
+Info about algorithm subtypes. Percentages calculated from IDs with info on algorithm subtype.
+
+```{r}
+# Pivot longer to get all algorithm categories in one column
+algorithm_long_5bins <- sonata_db_algorithm_recoded %>%
+  pivot_longer(cols = c(Visual, IndexClass, OBIA, Regression, 
+                        `Time series analysis`, ML, AI),
+               names_to = "Algorithm_type", values_to = "Algorithm_subtype") %>%
+  # Remove those without info on algorithm subtype
+  filter(!is.na(Algorithm_subtype)) %>%
+  separate_rows(Algorithm_subtype, sep = ";\\s*") %>%
+  mutate(Year_bin = paste0(1986 + 5 * ((Year - 1986) %/% 5), "–",
+                           1986 + 5 * ((Year - 1986) %/% 5) + 4)) %>%
+  group_by(Year_bin, Algorithm_type, Algorithm_subtype) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  group_by(Year_bin, Algorithm_type) %>%
+  mutate(percentage = (Count / sum(Count)) * 100,
+         label = ifelse(percentage >= 10,
+                          paste0(round(percentage), "%"), NA)) %>%
+  ungroup() %>%
+  mutate(Algorithm_type = factor(Algorithm_type,
+                              levels = c("Visual", "IndexClass", "OBIA",
+                                         "Regression", "Time series analysis",
+                                         "ML", "AI")))
+```
+
+```{r}
+algorithm_long_5bins %>%
+  group_by(Algorithm_type, Algorithm_subtype) %>%
+  summarise(total_counts = sum(Count)) %>%
+  ungroup() %>%
+  print(n = 100)
+```
+
+```{r}
+# Dividir por tipo de algorithm
+algorithm_groups_5bins <- algorithm_long_5bins %>%
+  # Only for IndexClass, ML, AI
+  filter(Algorithm_type %in% c("IndexClass", "ML", "AI")) %>%
+  group_split(Algorithm_type)
+```
+
+### Bars
+
+```{r}
+algorithm_bars_5bins <- map2(algorithm_groups_5bins,
+                             seq_along(algorithm_groups_5bins), ~ {
+  p <- ggplot(.x, aes(x = Year_bin, y = percentage, fill = Algorithm_subtype)) +
+    geom_col(color = "black") +
+    geom_text(aes(label = label),
+              position = position_stack(vjust = 0.5),
+              size = 3, color = "black") +
+    theme_bw() +
+    # Common x-axis
+    scale_x_discrete(limits = 
+                       sort(unique(unlist(lapply(algorithm_groups_5bins, 
+                                                 function(df) df$Year_bin))))) +
+    labs(title = unique(.x$Algorithm_type), y = "% of studies", x = if (.y == length(algorithm_groups_5bins)) "Year" else NULL) +
+    theme(
+      legend.position = "right",
+      legend.title = element_blank(),
+      # Only show x-axis labels in the last graph
+      axis.title.x = if (.y != length(algorithm_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.text.x = if (.y != length(algorithm_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.ticks.x = if (.y != length(algorithm_groups_5bins)) 
+        element_blank() else element_line()
+    ) +
+    guides(fill = guide_legend(ncol = 2))
+  
+  return(p)
+})
+
+
+# Combine wtih patchwork
+algorithm_detail_bars_5bins <- wrap_plots(algorithm_bars_5bins, ncol = 1)
+algorithm_detail_bars_5bins
+```
+
+```{r}
+ggsave(here("output", "figures", "algorithm_detail_bars.tiff"), 
+       plot = algorithm_detail_bars_5bins, width = 25, height = 14, units = "cm",
+       dpi = 300)
+ggsave(here("output", "figures", "algorithm_detail_bars_200dpi.tiff"), 
+       plot = algorithm_detail_bars_5bins, width = 25, height = 14, units = "cm",
+       dpi = 200)
+```
+
+### Lines
+
+```{r}
+algorithm_lines_5bins <- map2(algorithm_groups_5bins,
+                             seq_along(algorithm_groups_5bins), ~ {
+  p <- ggplot(.x, aes(x = Year_bin, y = percentage, color = Algorithm_subtype)) +
+    geom_line(aes(group = Algorithm_subtype)) +
+    geom_point() +
+    theme_bw() +
+    # Common x-axis
+    scale_x_discrete(limits = 
+                       sort(unique(unlist(lapply(algorithm_groups_5bins, 
+                                                 function(df) df$Year_bin))))) +
+    labs(title = unique(.x$Algorithm_type), y = "% of studies", x = if (.y == length(algorithm_groups_5bins)) "Year" else NULL) +
+    theme(
+      legend.position = "right",
+      legend.title = element_blank(),
+      # Only show x-axis labels in the last graph
+      axis.title.x = if (.y != length(algorithm_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.text.x = if (.y != length(algorithm_groups_5bins)) 
+        element_blank() else element_text(),
+      axis.ticks.x = if (.y != length(algorithm_groups_5bins)) 
+        element_blank() else element_line()
+    ) +
+    guides(color = guide_legend(ncol = 2))
+  
+  return(p)
+})
+
+
+# Combine wtih patchwork
+algorithm_detail_lines_5bins <- wrap_plots(algorithm_lines_5bins, ncol = 1)
+algorithm_detail_lines_5bins
+```
+
+```{r}
+ggsave(here("output", "figures", "algorithm_detail_lines.tiff"), 
+       plot = algorithm_detail_lines_5bins, width = 25, height = 14, units = "cm",
+       dpi = 300)
+ggsave(here("output", "figures", "algorithm_detail_lines_200dpi.tiff"), 
+       plot = algorithm_detail_lines_5bins, width = 25, height = 14, units = "cm",
+       dpi = 200)
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```

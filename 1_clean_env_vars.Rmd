@@ -1,0 +1,243 @@
+---
+title: "Anaylises for SONATA review"
+subtitle: "Purpose field"
+author: "Alicia Valdés"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This is a script to perform analyses for the SONATA review paper.
+
+# Load libraries
+
+```{r}
+library(here)
+library(readxl)
+library(tidyverse)
+```
+
+# Read data
+
+In this data, in the sheet "env" I have edited the environmental variables manually in order to ALWAYS have ";" separating the different variables in each column. 
+
+```{r}
+sonata_data <-read_excel(here("data", "edited","database_sonata_v2.2_AV.xlsx"),
+                         sheet = "env")
+sonata_data
+```
+
+# Check for duplicate IDs
+
+```{r}
+sonata_data %>% count(ID) %>% filter(n > 1)
+```
+
+```{r}
+sonata_data %>% mutate(row_number = row_number()) %>% filter(ID == 2495)
+```
+
+```{r}
+# Remove row number of the wrong entry
+sonata_data <- sonata_data %>% slice(-619)
+```
+
+# Clean environmental variables
+
+## Convert all to 0/1
+
+```{r}
+sonata_data <- sonata_data %>%
+  mutate(Climate_bin = if_else(is.na(Climate) | Climate == "", 0, 
+                               if_else(Climate == "None", 0, 1)),
+         Soil_bin = if_else(is.na(Soil) | Soil == "", 0, 
+                            if_else(Soil == "None" | Soil == "Soil: none", 0,
+                                    1)),
+         Topography_bin = if_else(is.na(Topography) | Topography == "", 0, 
+                                  if_else(Topography == "None" | 
+                                            Topography == "None specified" |
+                                            Topography == "Not explicitly", 0,
+                                          1)),
+         Biotic_bin = if_else(is.na(Biotic) | Biotic == "", 0, 
+                              if_else(Biotic == "None", 0, 1)))
+```
+
+## Climate
+
+```{r}
+sonata_climate <- sonata_data %>%
+  select(ID, starts_with("Climate")) %>%
+  separate(Climate, 
+           # There is at most 6 different climatic variables
+           # Separate into 6 cols
+           into = paste0("Climate", 1:6), 
+           # The different variables in each col are always separated by ";"
+           sep = ";", 
+           fill = "right",
+           remove = FALSE, extra = "warn") %>%
+  # Remove whitespace
+  mutate(across(starts_with("Climate"), str_trim)) %>%
+  rowwise() %>%
+  # Create new cols to store data on most important Climate variables
+  mutate(
+    # Any of the Climate cols contains temperature
+    Clim_temp = any(str_detect(c_across(Climate1:Climate6),
+                               regex("temperature", ignore_case = TRUE))),
+    # Any of the Climate cols contains precipitation, rainfall or drought
+    Clim_precip = any(str_detect(c_across(Climate1:Climate6),
+                                 regex("precipitation|rainfall|drought",
+                                       ignore_case = TRUE))) ,
+    # Any of the Climate cols contains any word containing "radi" 
+    # (like "radiation", "irradiation") and the exact word "PAR"
+    Clim_rad = any(str_detect(c_across(Climate1:Climate6), 
+                              regex("radi|\\bPAR\\b", ignore_case = TRUE))),
+    # Any of the Climate cols contains humidity
+    Clim_humid = any(str_detect(c_across(Climate1:Climate6), 
+                                regex("humidity", ignore_case = TRUE))),
+    # Any of the Climate cols contains wind
+    Clim_wind = any(str_detect(c_across(Climate1:Climate6), 
+                               regex("wind", ignore_case = TRUE))),
+    # Any of the Climate cols contains evapotranspiration
+    Clim_evap = any(str_detect(c_across(Climate1:Climate6), 
+                               regex("evapotranspiration",
+                                     ignore_case = TRUE))),
+    # There is sth in any of the Climate cols and
+    # all previous variables are FALSE
+    Clim_other = if_else(Climate1 != 1 & Climate_bin == 1 & 
+                           all(is.na(c_across(Clim_temp:Clim_evap))), TRUE, NA),
+    # Climatic variables not specified
+    Clim_unspecif = if_else(Climate1 == 1, TRUE, NA)
+    ) %>%
+  ungroup()
+```
+
+## Soil
+
+```{r}
+sonata_soil <- sonata_data %>%
+  select(ID, starts_with("Soil")) %>%
+  separate(Soil, 
+           # There is at most 8 different soil variables
+           # Separate into 8 cols
+           into = paste0("Soil", 1:8), 
+           # The different variables in each col are always separated by ";"
+           sep = ";", 
+           fill = "right",
+           remove = FALSE, extra = "warn") %>%
+  # Remove whitespace
+  mutate(across(starts_with("Soil"), str_trim)) %>%
+  rowwise() %>%
+  # Create new cols to store data on most important Soil variables
+  mutate(
+    # Any of the soil cols contains any word containing "type" or "class"
+    Soil_type = any(str_detect(c_across(Soil1:Soil8), 
+                               regex("type|class", ignore_case = TRUE))),
+    # Any of the Soil cols contains texture
+    Soil_text = any(str_detect(c_across(Soil1:Soil8), 
+                               regex("texture", ignore_case = TRUE))),
+    # Any of the soil cols contains moisture, water or wetness
+    Soil_moist = any(str_detect(c_across(Soil1:Soil8),
+                                regex("moisture|water|wetness",
+                                      ignore_case = TRUE))),
+    # Any of the soil cols contains depth
+    Soil_depth = any(str_detect(c_across(Soil1:Soil8), 
+                                regex("depth", ignore_case = TRUE))),
+    # Any of the soil cols contains pH or acidity
+    Soil_ph = any(str_detect(c_across(Soil1:Soil8), 
+                             regex("pH|acidity", ignore_case = TRUE))),
+    # Any of the soil cols contains carbon
+    Soil_carbon = any(str_detect(c_across(Soil1:Soil8), 
+                                 regex("carbon", ignore_case = TRUE))),
+    # Any of the soil cols contains roughness
+    Soil_rough = any(str_detect(c_across(Soil1:Soil8), 
+                                regex("roughness", ignore_case = TRUE))),
+    # Any of the soil cols contains any word containing "ferti"
+    Soil_ferti = any(str_detect(c_across(Soil1:Soil8), 
+                               regex("ferti", ignore_case = TRUE))),
+    # Any of the soil cols contains nitrogen
+    Soil_nitro = any(str_detect(c_across(Soil1:Soil8), 
+                                regex("nitrogen", ignore_case = TRUE))),
+    # Any of the soil cols contains bulk
+    Soil_bulk = any(str_detect(c_across(Soil1:Soil8), 
+                               regex("bulk", ignore_case = TRUE))),
+    # There is sth in any of the Soil cols and
+    # all previous variables are FALSE
+    Soil_other = if_else(Soil1 != 1 & Soil_bin == 1 & 
+                           all(is.na(c_across(Soil_type:Soil_bulk))), TRUE, NA),
+    # Soil variables not specified
+    Soil_unspecif = if_else(Soil == 1, TRUE, NA)
+    ) %>%
+  ungroup()
+```
+
+## Topography
+
+```{r}
+sonata_topo <- sonata_data %>%
+  select(ID, starts_with("Topo")) %>%
+  separate(Topography, 
+           # There is at most 7different topo variables
+           # Separate into 7 cols
+           into = paste0("Topo", 1:7), 
+           # The different variables in each col are always separated by ";"
+           sep = ";", 
+           fill = "right",
+           remove = FALSE, extra = "warn") %>%
+  # Remove whitespace
+  mutate(across(starts_with("Topo"), str_trim)) %>%
+  rowwise() %>%
+  # Create new cols to store data on most important Topo variables
+  mutate(
+    # Any of the Topo cols contains aspect
+    Topo_aspect = any(str_detect(c_across(Topo1:Topo7), 
+                               regex("aspect", ignore_case = TRUE))),
+    # Any of the Topo cols contains slope
+    Topo_slope = any(str_detect(c_across(Topo1:Topo7), 
+                               regex("slope", ignore_case = TRUE))),
+    # Any of the Topo cols contains elevation or altitude
+    Topo_elev = any(str_detect(c_across(Topo1:Topo7), 
+                               regex("elevation|altitude", 
+                                     ignore_case = TRUE))),
+    # Any of the Topo cols contains TWI or wetness
+    Topo_twi = any(str_detect(c_across(Topo1:Topo7), 
+                               regex("TWI|wetness", ignore_case = TRUE))),
+    # Any of the Topo cols contains curvature
+    Topo_curv = any(str_detect(c_across(Topo1:Topo7), 
+                               regex("curvature", ignore_case = TRUE))),
+    # There is sth in any of the Topo cols and
+    # all previous variables are FALSE
+    Topo_other = if_else(Topo1 != 1 & Topography_bin == 1 & 
+                           all(is.na(c_across(Topo_aspect:Topo_curv))), TRUE,
+                         NA),
+    # Topo variables not specified
+    Topo_unspecif = if_else(Topography == 1, TRUE, NA)
+    ) %>%
+  ungroup()
+```
+
+# Merged data
+
+```{r}
+sonata_env_data_clean <- sonata_data %>% 
+  # Add Climate
+  left_join(sonata_climate %>% select(ID, Clim_temp:Clim_unspecif)) %>%
+  # Add Soil
+  left_join(sonata_soil %>% select(ID, Soil_type:Soil_unspecif)) %>%
+  # Add Topo
+  left_join(sonata_topo %>% select(ID, Topo_aspect:Topo_unspecif)) %>%
+  mutate(across(Clim_temp:Topo_unspecif, ~ ifelse(is.na(.), 0, 1)))
+```
+
+# Save as csv
+
+```{r}
+write_csv(sonata_env_data_clean, "data/clean/sonata_env_data_clean.csv")
+```
+
+
+# Session info
+
+```{r}
+sessionInfo()
+```
