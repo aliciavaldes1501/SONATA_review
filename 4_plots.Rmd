@@ -8,8 +8,6 @@ output:
   html_notebook: default
 ---
 
-This is a script to merge all databases for the SONATA review paper.
-
 # Load libraries
 
 ```{r}
